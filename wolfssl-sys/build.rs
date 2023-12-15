@@ -8,7 +8,7 @@ use autotools::Config;
 use std::collections::HashSet;
 use std::env;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::process::Command;
 
 /**
@@ -90,8 +90,6 @@ fn build_wolfssl(dest: &str) -> PathBuf {
         .enable("dtls", None)
         // Enable single precision
         .enable("sp", None)
-        // Enable single precision ASM
-        .enable("sp-asm", None)
         // Enable setting the D/TLS MTU size
         .enable("dtls-mtu", None)
         // Disable SHA3
@@ -123,6 +121,27 @@ fn build_wolfssl(dest: &str) -> PathBuf {
         .cflag("-DUSE_CERT_BUFFERS_256")
         .cflag("-DWOLFSSL_NO_SPHINCS");
 
+    if ! cfg!(feature = "cortexm0p") {
+        // Enable single precision ASM
+        conf.enable("sp-asm", None);
+    } else {
+        conf.env("CC", "arm-none-eabi-gcc");
+        conf.env("LD", "arm-none-eabi-ld");
+        conf.env("AR", "arm-none-eabi-ar");
+        conf.env("RANLIB", "arm-none-eabi-ranlib");
+        conf.env("STRIP", "arm-none-eabi-strip");
+        conf.cflag("-specs=rdimon.specs");
+        conf.cflag("-DNO_WOLFSSL_DIR");
+        conf.cflag("-DWOLFSSL_USER_IO");
+        conf.cflag("-DNO_WRITEV");
+        conf.cflag("-DTIME_T_NOT_64BIT");
+        conf.cflag("-DHAVE_PK_CALLBACKS");
+        conf.cflag("-DUSE_WOLF_ARM_STARTUP");
+        conf.disable("filesystem", None);
+        conf.enable("fastmath", None);
+        conf.config_option("host", Some("arm-none-eabi"));
+    }
+
     if cfg!(feature = "debug") {
         conf.enable("debug", None);
         conf.cflag("-DHAVE_SECRET_CALLBACK");
@@ -147,18 +166,37 @@ fn build_wolfssl(dest: &str) -> PathBuf {
         conf.enable("aesni", None);
     }
 
-    if build_target::target_arch().unwrap() == build_target::Arch::AARCH64 {
-        // Enable ARM ASM optimisations
-        conf.enable("armasm", None);
-    }
+    if ! cfg!(feature = "cortexm0p") {
 
-    if build_target::target_arch().unwrap() == build_target::Arch::ARM {
-        // Enable ARM ASM optimisations
-        conf.enable("armasm", None);
+        if build_target::target_arch().unwrap() == build_target::Arch::AARCH64 {
+            // Enable ARM ASM optimisations
+            conf.enable("armasm", None);
+        }
+
+        if build_target::target_arch().unwrap() == build_target::Arch::ARM {
+            // Enable ARM ASM optimisations
+            conf.enable("armasm", None);
+        }
+
     }
 
     // Build and return the config
     conf.build()
+}
+
+fn find_exe_dir<P>(exe_name: P) -> Option<PathBuf>
+    where P: AsRef<Path>,
+{
+    env::var_os("PATH").and_then(|paths| {
+        env::split_paths(&paths).filter_map(|dir| {
+            let full_path = dir.join(&exe_name);
+            if full_path.is_file() {
+                Some(dir)
+            } else {
+                None
+            }
+        }).next()
+    })
 }
 
 fn main() -> std::io::Result<()> {
@@ -197,11 +235,33 @@ fn main() -> std::io::Result<()> {
     let ignored_macros = IgnoreMacros(hash_ignored_macros);
     let dst_include = format!("{dst_string}/include");
 
+    let path_eabi_gcc = {
+        if cfg!(feature = "cortexm0p") {
+            find_exe_dir("arm-none-eabi-gcc")
+        } else {
+            None
+        }
+    };
+
     // Build the Rust binding
     let builder = bindgen::Builder::default()
         .header("wrapper.h")
-        .clang_arg(format!("-I{dst_include}/"))
-        .parse_callbacks(Box::new(ignored_macros))
+        .use_core()
+        .clang_arg(format!("-I{dst_include}/"));
+
+    let builder = {
+        if let Some(p) = path_eabi_gcc {
+            if let Some(ps) = p.to_str() {
+                builder.clang_arg(format!("-I{ps}/../arm-none-eabi/include"))
+            } else {
+                builder
+            }
+        } else {
+            builder
+        }
+    };
+    
+    let builder = builder.parse_callbacks(Box::new(ignored_macros))
         .formatter(bindgen::Formatter::Rustfmt);
 
     let builder = builder

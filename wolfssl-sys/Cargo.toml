@@ -25,6 +25,7 @@ optional = true
 default = []
 debug = []
 postquantum = ["dep:oqs-sys"]
+cortexm0p = []
 
 
 [package.metadata.cargo-all-features]
