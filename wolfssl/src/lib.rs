@@ -1,3 +1,6 @@
+#![no_std]
+#![feature(error_in_core)]
+
 //! The `wolfssl` crate is designed to be a Rust layer built on top of
 //! the `wolfssl-sys` crate (a C passthrough crate).
 
@@ -21,7 +24,11 @@ pub use error::{Error, Poll, Result};
 #[cfg(feature = "debug")]
 pub use debug::*;
 
-use std::ptr::NonNull;
+extern crate alloc;
+
+use core::ptr::NonNull;
+
+use once_cell::sync::OnceCell;
 
 /// Record size is defined as `2^14 + 1`.
 ///
@@ -41,7 +48,7 @@ const TLS_MAX_RECORD_SIZE: usize = 2usize.pow(14) + 1;
 ///
 /// [0]: https://www.wolfssl.com/documentation/manuals/wolfssl/group__TLS.html#function-wolfssl_init
 fn wolf_init() -> Result<()> {
-    static ONCE: std::sync::OnceLock<Result<()>> = std::sync::OnceLock::new();
+    static ONCE: OnceCell<Result<()>> = OnceCell::new();
 
     ONCE.get_or_init(|| {
         // SAFETY: [`wolfSSL_Init`][0] ([also][1]) must be called once
@@ -220,25 +227,15 @@ pub enum CurveGroup {
     EccSecp256R1,
 
     /// `WOLFSSL_ECC_X25519`
-    EccX25519,
-
-    /// `WOLFSSL_P256_KYBER_LEVEL1`
-    P256KyberLevel1,
-    /// `WOLFSSL_P384_KYBER_LEVEL3`
-    P384KyberLevel3,
-    /// `WOLFSSL_P521_KYBER_LEVEL5`
-    P521KyberLevel5,
+    EccX25519
 }
 
 impl CurveGroup {
-    fn as_ffi(&self) -> std::os::raw::c_uint {
+    fn as_ffi(&self) -> core::ffi::c_uint {
         use CurveGroup::*;
         match self {
             EccSecp256R1 => wolfssl_sys::WOLFSSL_ECC_SECP256R1,
-            EccX25519 => wolfssl_sys::WOLFSSL_ECC_X25519,
-            P256KyberLevel1 => wolfssl_sys::WOLFSSL_P256_KYBER_LEVEL1,
-            P384KyberLevel3 => wolfssl_sys::WOLFSSL_P384_KYBER_LEVEL3,
-            P521KyberLevel5 => wolfssl_sys::WOLFSSL_P521_KYBER_LEVEL5,
+            EccX25519 => wolfssl_sys::WOLFSSL_ECC_X25519
         }
     }
 }
@@ -248,21 +245,15 @@ pub enum RootCertificate<'a> {
     /// In-memory PEM buffer
     PemBuffer(&'a [u8]),
     /// In-memory ASN1 buffer
-    Asn1Buffer(&'a [u8]),
-    /// Path to a PEM file, or a directory of PEM files
-    PemFileOrDirectory(&'a std::path::Path),
+    Asn1Buffer(&'a [u8])
 }
 
 /// Defines either a public or private key
 pub enum Secret<'a> {
     /// In-memory ASN1 buffer
     Asn1Buffer(&'a [u8]),
-    /// Path to ASN1 file
-    Asn1File(&'a std::path::Path),
     /// In-memory PEM buffer
-    PemBuffer(&'a [u8]),
-    /// Path to PEM file
-    PemFile(&'a std::path::Path),
+    PemBuffer(&'a [u8])
 }
 
 #[cfg(test)]

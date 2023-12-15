@@ -8,7 +8,7 @@ impl Random {
     pub fn new() -> Result<Random> {
         crate::wolf_init()?;
 
-        let mut rng = std::mem::MaybeUninit::<wolfssl_sys::WC_RNG>::uninit();
+        let mut rng = core::mem::MaybeUninit::<wolfssl_sys::WC_RNG>::uninit();
         // SAFETY:
         // [`wc_InitRng()`][0] ([also][1]) is documented to receive [`WC_RNG`] as input to initialise seed and key cipher.
         // The corresponding memory is deallocated, when dropping this structure

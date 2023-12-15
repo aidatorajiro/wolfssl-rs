@@ -1,7 +1,7 @@
-use std::ffi::c_int;
+use core::ffi::c_int;
+use thiserror_no_std::Error;
 
-use bytes::Bytes;
-use thiserror::Error;
+extern crate alloc;
 
 /// The `Result::Ok` for a non-blocking operation.
 #[derive(Debug)]
@@ -17,7 +17,7 @@ pub enum Poll<T> {
     /// When under secure renegotiation, WolfSSL can now sometimes emit an
     /// `APP_DATA_READY` code, meaning that it has received application data
     /// during this renegotiation. This variant contains this information.
-    AppData(Bytes),
+    AppData(alloc::vec::Vec<u8>),
 }
 
 #[derive(Clone, Error, Debug)]
@@ -44,17 +44,17 @@ impl Error {
 #[derive(Clone, Error, Debug)]
 #[error("code: {code}, what: {what}")]
 pub struct FatalError {
-    what: String,
+    what: alloc::string::String,
     code: c_int,
 }
 
-impl std::convert::From<c_int> for FatalError {
+impl core::convert::From<c_int> for FatalError {
     // Not all errors are fatal. Since the errors are fundamentally C-style
     // enums, the most we can do is to just check that only fatal errors get
     // constructed.
     fn from(code: c_int) -> Self {
         let this = Self {
-            what: wolf_error_string(code as std::ffi::c_ulong),
+            what: wolf_error_string(code as core::ffi::c_ulong),
             code,
         };
 
@@ -82,18 +82,18 @@ impl std::convert::From<c_int> for FatalError {
 /// return a `WANT_READ`/`WANT_WRITE`-ish error, which WolfSSL does not consider
 /// fatal, and indicates that the caller should retry again (usually after doing
 /// some form of rectification like handling the IO buffers)
-pub type PollResult<T> = std::result::Result<Poll<T>, Error>;
+pub type PollResult<T> = core::result::Result<Poll<T>, Error>;
 
 /// Describes an outcome that is synchronous.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;
 
 /// Converts a WolfSSL error code to a string
 // Note that this accepts an `unsigned long` instead of an `int`.
 //
 // Which is odd, because we're supposed to pass this the result of
 // `wolfSSL_get_error`, which returns a `c_int`
-fn wolf_error_string(raw_err: std::ffi::c_ulong) -> String {
-    let mut buffer = vec![0u8; wolfssl_sys::WOLFSSL_MAX_ERROR_SZ as usize];
+fn wolf_error_string(raw_err: core::ffi::c_ulong) -> alloc::string::String {
+    let mut buffer = alloc::vec![0u8; wolfssl_sys::WOLFSSL_MAX_ERROR_SZ as usize];
 
     // SAFETY:
     // [`wolfSSL_ERR_error_string()`][0] ([also][1]) is documented to store at most `WOLFSSL_MAX_ERROR_SZ` bytes,
@@ -112,7 +112,7 @@ fn wolf_error_string(raw_err: std::ffi::c_ulong) -> String {
             buffer.as_mut_slice().as_mut_ptr() as *mut i8,
         );
     }
-    String::from_utf8_lossy(&buffer)
+    alloc::string::String::from_utf8_lossy(&buffer)
         .trim_end_matches(char::from(0))
         .to_string()
 }
@@ -123,7 +123,7 @@ mod wolf_error {
 
     #[test]
     fn wolf_error_string_check_string() {
-        let s = wolf_error_string(wolfssl_sys::WOLFSSL_ERROR_WANT_READ as std::ffi::c_ulong);
+        let s = wolf_error_string(wolfssl_sys::WOLFSSL_ERROR_WANT_READ as core::ffi::c_ulong);
         assert_eq!(s, "non-blocking socket wants data to be read");
     }
 }
